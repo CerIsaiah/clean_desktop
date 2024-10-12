@@ -1,6 +1,7 @@
 import sys
 import os
 import platform
+import shutil
 from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QStackedWidget, QSizePolicy, QTextEdit, QFileIconProvider, QScrollArea, QFrame
 from PyQt5.QtGui import QIcon, QPixmap, QKeyEvent, QPalette, QColor, QFont
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSize, QFileInfo, QTimer, QEvent
@@ -244,6 +245,10 @@ class MainWindow(QMainWindow):
         self.layout.addLayout(self.arrow_layout)
 
         self.desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
+        self.clutter_folder = os.path.join(self.desktop_path, "Desktop Clutter")
+        if not os.path.exists(self.clutter_folder):
+            os.makedirs(self.clutter_folder)
+
         self.file_loader = FileLoader(self.desktop_path)
         self.file_loader.file_loaded.connect(self.add_file)
         self.file_loader.start()
@@ -259,6 +264,7 @@ class MainWindow(QMainWindow):
     def on_discard(self):
         self.left_arrow_text.setStyleSheet("font-size: 18px; color: #FF6B6B; font-weight: bold;")
         QTimer.singleShot(300, lambda: self.left_arrow_text.setStyleSheet("font-size: 18px; color: #888; font-weight: bold;"))
+        self.move_file_to_clutter()
         self.move_to_next_file()
 
     def on_keep(self):
@@ -266,12 +272,27 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(300, lambda: self.right_arrow_text.setStyleSheet("font-size: 18px; color: #888; font-weight: bold;"))
         self.move_to_next_file()
 
+    def move_file_to_clutter(self):
+        current_card = self.stack.currentWidget()
+        if current_card:
+            file_path = current_card.file_path
+            file_name = os.path.basename(file_path)
+            new_path = os.path.join(self.clutter_folder, file_name)
+            
+            try:
+                shutil.move(file_path, new_path)
+                print(f"Moved {file_name} to Desktop Clutter folder")
+            except Exception as e:
+                print(f"Error moving file: {str(e)}")
+
     def move_to_next_file(self):
         current_index = self.stack.currentIndex()
-        if current_index < self.stack.count() - 1:
-            self.stack.setCurrentIndex(current_index + 1)
+        self.stack.removeWidget(self.stack.currentWidget())
+        
+        if self.stack.count() > 0:
+            self.stack.setCurrentIndex(current_index % self.stack.count())
         else:
-            self.stack.setCurrentIndex(0)
+            self.close()
 
     def eventFilter(self, obj, event):
         if event.type() == QEvent.KeyPress:
