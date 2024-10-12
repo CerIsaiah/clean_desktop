@@ -1,16 +1,12 @@
 import sys
 import os
-import platform
 import shutil
-from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QStackedWidget, QSizePolicy, QTextEdit, QFileIconProvider, QScrollArea, QFrame
-from PyQt5.QtGui import QIcon, QPixmap, QKeyEvent, QPalette, QColor, QFont
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSize, QFileInfo, QTimer, QEvent
+from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QStackedWidget, QFileIconProvider, QStyle, QFrame, QTextEdit, QScrollArea
+from PyQt5.QtGui import QIcon, QPixmap, QKeyEvent, QColor, QPainter, QImage, QFont, QPalette
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSize, QFileInfo, QEvent, QRect
 
-import mimetypes
-import datetime
 import fitz  # PyMuPDF for PDF preview
 from docx import Document  # python-docx for DOCX preview
-import configparser
 
 class FileLoader(QThread):
     file_loaded = pyqtSignal(str, str)
@@ -25,42 +21,17 @@ class FileLoader(QThread):
             if os.path.isfile(file_path):
                 self.file_loaded.emit(file, file_path)
 
-class PreviewLoader(QThread):
-    preview_loaded = pyqtSignal(str, bool)
+class RoundedWidget(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("roundedWidget")
 
-    def __init__(self, file_path, file_type, start_page=0, pages_to_load=2):
-        super().__init__()
-        self.file_path = file_path
-        self.file_type = file_type
-        self.start_page = start_page
-        self.pages_to_load = pages_to_load
-
-    def run(self):
-        preview_text = ""
-        has_more = False
-
-        if self.file_type == "application/pdf":
-            try:
-                with fitz.open(self.file_path) as doc:
-                    total_pages = len(doc)
-                    for i in range(self.start_page, min(self.start_page + self.pages_to_load, total_pages)):
-                        preview_text += doc[i].get_text() + "\n--- Page Break ---\n"
-                    has_more = self.start_page + self.pages_to_load < total_pages
-            except Exception as e:
-                preview_text = f"Error loading PDF: {str(e)}"
-
-        elif self.file_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-            try:
-                doc = Document(self.file_path)
-                total_paragraphs = len(doc.paragraphs)
-                end_paragraph = min(self.start_page + self.pages_to_load * 10, total_paragraphs)
-                for i in range(self.start_page, end_paragraph):
-                    preview_text += doc.paragraphs[i].text + "\n"
-                has_more = end_paragraph < total_paragraphs
-            except Exception as e:
-                preview_text = f"Error loading DOCX: {str(e)}"
-
-        self.preview_loaded.emit(preview_text, has_more)
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setBrush(QColor("#F0F0F0"))
+        painter.setPen(Qt.NoPen)
+        painter.drawRoundedRect(self.rect(), 20, 20)
 
 class FileCard(QWidget):
     def __init__(self, file_path):
@@ -72,7 +43,7 @@ class FileCard(QWidget):
 
         self.setStyleSheet("""
             QWidget {
-                background-color: #F3ECE0;
+                background-color: #FFFFFF;
                 border-radius: 20px;
             }
             QLabel {
@@ -80,51 +51,76 @@ class FileCard(QWidget):
             }
         """)
 
-        self.title = QLabel("desktop blsh")
-        self.title.setStyleSheet("font-size: 28px; font-weight: bold; background-color: transparent; color: #2C3E50;")
+        self.title = QLabel("Desktop File")
+        self.title.setStyleSheet("""
+            font-size: 32px;
+            font-weight: bold;
+            background-color: transparent;
+            color: #2C3E50;
+            padding: 10px;
+        """)
         self.title.setAlignment(Qt.AlignCenter)
         self.layout.addWidget(self.title)
 
-        self.content_area = QWidget()
+        self.content_area = RoundedWidget()
         self.content_layout = QVBoxLayout(self.content_area)
-        self.content_area.setStyleSheet("""
-            background-color: #D3D3D3;
-            border-radius: 15px;
-            min-height: 350px;
-            padding: 15px;
-        """)
+        self.content_layout.setContentsMargins(20, 20, 20, 20)
+        self.layout.addWidget(self.content_area)
 
-        self.icon_background = QFrame()
-        self.icon_background.setStyleSheet("""
-            background-color: #F3ECE0;
-            border-radius: 15px;
-            margin: 10px;
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setStyleSheet("""
+            QScrollArea {
+                background-color: transparent;
+                border: none;
+            }
+            QScrollBar:vertical {
+                border: none;
+                background: #F0F0F0;
+                width: 10px;
+                margin: 0px 0px 0px 0px;
+            }
+            QScrollBar::handle:vertical {
+                background: #BDBDBD;
+                min-height: 20px;
+                border-radius: 5px;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px;
+            }
         """)
-        self.icon_layout = QVBoxLayout(self.icon_background)
+        self.content_layout.addWidget(self.scroll_area)
+
+        self.content_widget = QWidget()
+        self.content_widget_layout = QVBoxLayout(self.content_widget)
+        self.scroll_area.setWidget(self.content_widget)
 
         self.icon_label = QLabel()
         self.icon_label.setAlignment(Qt.AlignCenter)
-        self.icon_label.setFixedSize(250, 250)
-        self.icon_layout.addWidget(self.icon_label, alignment=Qt.AlignCenter)
-
-        self.content_layout.addWidget(self.icon_background)
+        self.content_widget_layout.addWidget(self.icon_label, alignment=Qt.AlignCenter)
 
         self.preview_text = QTextEdit()
         self.preview_text.setReadOnly(True)
         self.preview_text.setVisible(False)
         self.preview_text.setStyleSheet("""
-            font-size: 16px;
-            line-height: 1.5;
-            background-color: #FFFFFF;
-            padding: 10px;
-            border-radius: 10px;
+            QTextEdit {
+                font-size: 16px;
+                line-height: 1.6;
+                background-color: #F9F9F9;
+                padding: 15px;
+                border-radius: 10px;
+                border: 1px solid #E0E0E0;
+            }
         """)
-        self.content_layout.addWidget(self.preview_text)
-
-        self.layout.addWidget(self.content_area)
+        self.content_widget_layout.addWidget(self.preview_text)
 
         self.file_info = QLabel()
-        self.file_info.setStyleSheet("font-size: 18px; background-color: transparent; color: #34495E;")
+        self.file_info.setStyleSheet("""
+            font-size: 18px;
+            background-color: transparent;
+            color: #34495E;
+            padding: 10px;
+        """)
         self.file_info.setAlignment(Qt.AlignCenter)
         self.layout.addWidget(self.file_info)
 
@@ -132,18 +128,9 @@ class FileCard(QWidget):
 
     def update_file_info(self):
         file_info = self.get_file_info()
-        self.file_info.setText(f"{file_info['name']}\nSize: {file_info['size']}")
+        self.file_info.setText(f"{file_info['name']}\n{file_info['size']}")
 
-        icon = self.get_file_icon(self.file_path)
-        pixmap = icon.pixmap(QSize(200, 200))
-        self.icon_label.setPixmap(pixmap.scaled(200, 200, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-
-        if file_info["type"] in ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"]:
-            self.load_preview()
-        else:
-            self.preview_text.setVisible(False)
-            self.icon_background.setVisible(True)
-            self.preview_text.setText(f"Type: {file_info['type']}\nModified: {file_info['modified']}")
+        self.load_preview()
 
     def get_file_icon(self, file_path):
         icon_provider = QFileIconProvider()
@@ -158,8 +145,6 @@ class FileCard(QWidget):
     def get_file_info(self):
         file_stats = os.stat(self.file_path)
         file_size = file_stats.st_size
-        last_modified = datetime.datetime.fromtimestamp(file_stats.st_mtime)
-        mime_type, _ = mimetypes.guess_type(self.file_path)
         
         if file_size < 1024:
             size_str = f"{file_size} B"
@@ -170,79 +155,119 @@ class FileCard(QWidget):
         
         return {
             "name": os.path.basename(self.file_path),
-            "type": mime_type if mime_type else "Unknown",
             "size": size_str,
-            "modified": last_modified.strftime("%Y-%m-%d %H:%M:%S")
         }
 
     def load_preview(self):
-        file_info = self.get_file_info()
-        self.preview_loader = PreviewLoader(self.file_path, file_info["type"])
-        self.preview_loader.preview_loaded.connect(self.on_preview_loaded)
-        self.preview_loader.start()
-
-    def on_preview_loaded(self, preview_text, has_more):
-        self.preview_text.setText(preview_text)
-        self.preview_text.setVisible(True)
-        self.icon_background.setVisible(False)
+        file_extension = os.path.splitext(self.file_path)[1].lower()
+        
+        if file_extension in ['.png', '.jpg', '.jpeg']:
+            pixmap = QPixmap(self.file_path)
+            if not pixmap.isNull():
+                self.icon_label.setPixmap(pixmap.scaled(400, 400, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+                self.icon_label.setVisible(True)
+                self.preview_text.setVisible(False)
+            else:
+                self.icon_label.setText("Error loading image")
+        elif file_extension == '.pdf':
+            try:
+                with fitz.open(self.file_path) as doc:
+                    text = ""
+                    for page in doc:
+                        text += page.get_text()
+                        if len(text) > 1000:
+                            break
+                    self.preview_text.setText(text)
+                    self.icon_label.setVisible(False)
+                    self.preview_text.setVisible(True)
+            except Exception as e:
+                self.preview_text.setText(f"Error loading PDF: {str(e)}")
+                self.icon_label.setVisible(False)
+                self.preview_text.setVisible(True)
+        elif file_extension == '.docx':
+            try:
+                doc = Document(self.file_path)
+                text = "\n".join([para.text for para in doc.paragraphs])
+                self.preview_text.setText(text[:1000] + "..." if len(text) > 1000 else text)
+                self.icon_label.setVisible(False)
+                self.preview_text.setVisible(True)
+            except Exception as e:
+                self.preview_text.setText(f"Error loading DOCX: {str(e)}")
+                self.icon_label.setVisible(False)
+                self.preview_text.setVisible(True)
+        else:
+            icon = self.get_file_icon(self.file_path)
+            pixmap = icon.pixmap(QSize(200, 200))
+            self.icon_label.setPixmap(pixmap.scaled(200, 200, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            self.icon_label.setVisible(True)
+            self.preview_text.setVisible(False)
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Desktop File Swiper")
-        self.setGeometry(100, 100, 450, 750)
+        self.setStyleSheet("""
+            QMainWindow {
+                background-color: #F5F5F5;
+            }
+            QWidget {
+                font-family: 'Segoe UI', Arial, sans-serif;
+            }
+        """)
 
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
         self.layout = QVBoxLayout(self.central_widget)
 
+        self.undo_button = QPushButton("Undo")
+        self.undo_button.clicked.connect(self.on_undo)
+        self.undo_button.setStyleSheet("""
+            QPushButton {
+                font-size: 18px;
+                font-weight: bold;
+                border-radius: 15px;
+                padding: 10px 20px;
+                background-color: #3498DB;
+                color: white;
+                border: none;
+            }
+            QPushButton:hover {
+                background-color: #2980B9;
+            }
+            QPushButton:pressed {
+                background-color: #2573A7;
+            }
+        """)
+        self.layout.addWidget(self.undo_button, alignment=Qt.AlignRight)
+
         self.stack = QStackedWidget()
-        self.layout.addWidget(self.stack)
+        self.layout.addWidget(self.stack, 1)
 
         self.button_layout = QHBoxLayout()
-        self.discard_button = QPushButton("No")
-        self.keep_button = QPushButton("Yes")
+        self.discard_button = QPushButton("Put in Clutter")
+        self.keep_button = QPushButton("Keep on Desktop")
         self.discard_button.clicked.connect(self.on_discard)
         self.keep_button.clicked.connect(self.on_keep)
-        self.discard_button.setStyleSheet("""
+        button_style = """
             QPushButton {
-                background-color: #FF6B6B;
-                color: white;
                 font-size: 22px;
                 font-weight: bold;
                 border-radius: 25px;
                 padding: 15px 30px;
+                border: none;
             }
             QPushButton:hover {
-                background-color: #FF4040;
+                background-color: %s;
             }
-        """)
-        self.keep_button.setStyleSheet("""
-            QPushButton {
-                background-color: #FFD93D;
-                color: white;
-                font-size: 22px;
-                font-weight: bold;
-                border-radius: 25px;
-                padding: 15px 30px;
+            QPushButton:pressed {
+                background-color: %s;
             }
-            QPushButton:hover {
-                background-color: #FFC000;
-            }
-        """)
+        """
+        self.discard_button.setStyleSheet(button_style % ("#E74C3C", "#C0392B") + "QPushButton { background-color: #FF4040; color: white; }")
+        self.keep_button.setStyleSheet(button_style % ("#F1C40F", "#F39C12") + "QPushButton { background-color: #FFC000; color: white; }")
         self.button_layout.addWidget(self.discard_button)
         self.button_layout.addWidget(self.keep_button)
         self.layout.addLayout(self.button_layout)
-
-        self.arrow_layout = QHBoxLayout()
-        self.left_arrow_text = QLabel("← User said No")
-        self.right_arrow_text = QLabel("User said Yes →")
-        arrow_style = "font-size: 18px; color: #888; font-weight: bold;"
-        self.left_arrow_text.setStyleSheet(arrow_style)
-        self.right_arrow_text.setStyleSheet(arrow_style)
-        self.arrow_layout.addWidget(self.left_arrow_text, alignment=Qt.AlignCenter)
-        self.arrow_layout.addWidget(self.right_arrow_text, alignment=Qt.AlignCenter)
-        self.layout.addLayout(self.arrow_layout)
 
         self.desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
         self.clutter_folder = os.path.join(self.desktop_path, "Desktop Clutter")
@@ -253,46 +278,85 @@ class MainWindow(QMainWindow):
         self.file_loader.file_loaded.connect(self.add_file)
         self.file_loader.start()
 
+        self.undo_stack = []
+        self.current_files = []
+
+        self.is_fullscreen = False
         QApplication.instance().installEventFilter(self)
+
+        # Set initial size based on screen size
+        self.resize_window()
+
+    def resize_window(self):
+        screen = QApplication.primaryScreen().availableGeometry()
+        width = int(screen.width() * 0.5)
+        height = int(screen.height() * 0.8)
+        self.setGeometry((screen.width() - width) // 2, (screen.height() - height) // 2, width, height)
 
     def add_file(self, file_name, file_path):
         card = FileCard(file_path)
         self.stack.addWidget(card)
+        self.current_files.append(file_path)
         if self.stack.count() == 1:
             self.stack.setCurrentIndex(0)
 
     def on_discard(self):
-        self.left_arrow_text.setStyleSheet("font-size: 18px; color: #FF6B6B; font-weight: bold;")
-        QTimer.singleShot(300, lambda: self.left_arrow_text.setStyleSheet("font-size: 18px; color: #888; font-weight: bold;"))
         self.move_file_to_clutter()
         self.move_to_next_file()
 
     def on_keep(self):
-        self.right_arrow_text.setStyleSheet("font-size: 18px; color: #FFD93D; font-weight: bold;")
-        QTimer.singleShot(300, lambda: self.right_arrow_text.setStyleSheet("font-size: 18px; color: #888; font-weight: bold;"))
+        if self.current_files:
+            kept_file = self.current_files.pop(0)
+            self.undo_stack.append(("keep", kept_file))
         self.move_to_next_file()
 
+    def on_undo(self):
+        if self.undo_stack:
+            action, file_path = self.undo_stack.pop()
+            if action == "discard":
+                file_name = os.path.basename(file_path)
+                new_path = os.path.join(self.desktop_path, file_name)
+                try:
+                    shutil.move(file_path, new_path)
+                    print(f"Moved {file_name} back to Desktop")
+                    self.add_file(file_name, new_path)
+                except Exception as e:
+                    print(f"Error moving file back: {str(e)}")
+            elif action == "keep":
+                self.current_files.insert(0, file_path)
+                card = FileCard(file_path)
+                self.stack.insertWidget(0, card)
+                self.stack.setCurrentIndex(0)
+
     def move_file_to_clutter(self):
-        current_card = self.stack.currentWidget()
-        if current_card:
-            file_path = current_card.file_path
+        if self.current_files:
+            file_path = self.current_files.pop(0)
             file_name = os.path.basename(file_path)
             new_path = os.path.join(self.clutter_folder, file_name)
             
             try:
                 shutil.move(file_path, new_path)
                 print(f"Moved {file_name} to Desktop Clutter folder")
+                self.undo_stack.append(("discard", new_path))
             except Exception as e:
                 print(f"Error moving file: {str(e)}")
 
     def move_to_next_file(self):
-        current_index = self.stack.currentIndex()
-        self.stack.removeWidget(self.stack.currentWidget())
+        if self.stack.count() > 0:
+            self.stack.removeWidget(self.stack.widget(0))
         
         if self.stack.count() > 0:
-            self.stack.setCurrentIndex(current_index % self.stack.count())
+            self.stack.setCurrentIndex(0)
         else:
             self.close()
+
+    def toggle_fullscreen(self):
+        if self.is_fullscreen:
+            self.showNormal()
+            self.resize_window()
+        else:
+            self.showFullScreen()
+        self.is_fullscreen = not self.is_fullscreen
 
     def eventFilter(self, obj, event):
         if event.type() == QEvent.KeyPress:
@@ -303,10 +367,67 @@ class MainWindow(QMainWindow):
             elif key_event.key() == Qt.Key_Right:
                 self.on_keep()
                 return True
+            elif key_event.key() == Qt.Key_Up:
+                self.on_undo()
+                return True
+            elif key_event.key() == Qt.Key_F11:
+                self.toggle_fullscreen()
+                return True
+        elif event.type() == QEvent.Resize:
+            # Adjust content size when window is resized
+            for i in range(self.stack.count()):
+                card = self.stack.widget(i)
+                if isinstance(card, FileCard):
+                    card.icon_label.setFixedSize(self.width() // 3, self.height() // 3)
         return super().eventFilter(obj, event)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.setFocus()  # Ensure the main window has focus to capture key events
+
+class CustomFileIconProvider(QFileIconProvider):
+    def icon(self, fileInfo):
+        if fileInfo.isFile():
+            suffix = fileInfo.suffix().lower()
+            if suffix in ['jpg', 'jpeg', 'png', 'gif', 'bmp']:
+                return QIcon("path/to/image_icon.png")
+            elif suffix in ['doc', 'docx']:
+                return QIcon("path/to/word_icon.png")
+            elif suffix == 'pdf':
+                return QIcon("path/to/pdf_icon.png")
+            # Add more custom icons for different file types
+        return super().icon(fileInfo)
+
+def apply_dark_theme(app):
+    dark_palette = QPalette()
+    dark_palette.setColor(QPalette.Window, QColor(53, 53, 53))
+    dark_palette.setColor(QPalette.WindowText, Qt.white)
+    dark_palette.setColor(QPalette.Base, QColor(25, 25, 25))
+    dark_palette.setColor(QPalette.AlternateBase, QColor(53, 53, 53))
+    dark_palette.setColor(QPalette.ToolTipBase, Qt.white)
+    dark_palette.setColor(QPalette.ToolTipText, Qt.white)
+    dark_palette.setColor(QPalette.Text, Qt.white)
+    dark_palette.setColor(QPalette.Button, QColor(53, 53, 53))
+    dark_palette.setColor(QPalette.ButtonText, Qt.white)
+    dark_palette.setColor(QPalette.BrightText, Qt.red)
+    dark_palette.setColor(QPalette.Link, QColor(42, 130, 218))
+    dark_palette.setColor(QPalette.Highlight, QColor(42, 130, 218))
+    dark_palette.setColor(QPalette.HighlightedText, Qt.black)
+    app.setPalette(dark_palette)
+    app.setStyleSheet("QToolTip { color: #ffffff; background-color: #2a82da; border: 1px solid white; }")
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
+    
+    # Uncomment the following line to apply dark theme
+    # apply_dark_theme(app)
+    
+    app.setStyle("Fusion")  # Use Fusion style for a modern look
+    
+    # Set a custom font for the entire application
+    font = QFont("Segoe UI", 10)
+    app.setFont(font)
+    
     main_window = MainWindow()
     main_window.show()
     sys.exit(app.exec_())
