@@ -3,7 +3,7 @@ import os
 import shutil
 from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QStackedWidget, QFileIconProvider, QStyle, QFrame, QTextEdit, QScrollArea
 from PyQt5.QtGui import QIcon, QPixmap, QKeyEvent, QColor, QPainter, QImage, QFont, QPalette
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSize, QFileInfo, QEvent, QRect
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSize, QFileInfo, QEvent, QRect, QTimer
 
 import fitz  # PyMuPDF for PDF preview
 from docx import Document  # python-docx for DOCX preview
@@ -219,6 +219,9 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self.central_widget)
         self.layout = QVBoxLayout(self.central_widget)
 
+        # Undo button and label
+        undo_container = QWidget()
+        undo_layout = QVBoxLayout(undo_container)
         self.undo_button = QPushButton("Undo")
         self.undo_button.clicked.connect(self.on_undo)
         self.undo_button.setStyleSheet("""
@@ -238,7 +241,19 @@ class MainWindow(QMainWindow):
                 background-color: #2573A7;
             }
         """)
-        self.layout.addWidget(self.undo_button, alignment=Qt.AlignRight)
+        self.undo_label = QLabel("↑ Up Arrow")
+        self.undo_label.setStyleSheet("""
+            QLabel {
+                font-size: 14px;
+                color: #7F8C8D;
+                margin-top: 5px;
+            }
+        """)
+        self.undo_label.setAlignment(Qt.AlignCenter)
+        undo_layout.addWidget(self.undo_button)
+        undo_layout.addWidget(self.undo_label)
+        undo_container.setLayout(undo_layout)
+        self.layout.addWidget(undo_container, alignment=Qt.AlignRight)
 
         self.stack = QStackedWidget()
         self.layout.addWidget(self.stack, 1)
@@ -265,8 +280,38 @@ class MainWindow(QMainWindow):
         """
         self.discard_button.setStyleSheet(button_style % ("#E74C3C", "#C0392B") + "QPushButton { background-color: #FF4040; color: white; }")
         self.keep_button.setStyleSheet(button_style % ("#F1C40F", "#F39C12") + "QPushButton { background-color: #FFC000; color: white; }")
-        self.button_layout.addWidget(self.discard_button)
-        self.button_layout.addWidget(self.keep_button)
+
+        # Create vertical layouts for buttons and their labels
+        discard_layout = QVBoxLayout()
+        keep_layout = QVBoxLayout()
+
+        # Add buttons to their respective layouts
+        discard_layout.addWidget(self.discard_button)
+        keep_layout.addWidget(self.keep_button)
+
+        # Create and style labels for keyboard commands
+        self.discard_label = QLabel("← Left Arrow")
+        self.keep_label = QLabel("→ Right Arrow")
+        label_style = """
+            QLabel {
+                font-size: 14px;
+                color: #7F8C8D;
+                margin-top: 5px;
+            }
+        """
+        self.discard_label.setStyleSheet(label_style)
+        self.keep_label.setStyleSheet(label_style)
+        self.discard_label.setAlignment(Qt.AlignCenter)
+        self.keep_label.setAlignment(Qt.AlignCenter)
+
+        # Add labels to their respective layouts
+        discard_layout.addWidget(self.discard_label)
+        keep_layout.addWidget(self.keep_label)
+
+        # Add the vertical layouts to the main button layout
+        self.button_layout.addLayout(discard_layout)
+        self.button_layout.addLayout(keep_layout)
+
         self.layout.addLayout(self.button_layout)
 
         self.desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
@@ -358,17 +403,24 @@ class MainWindow(QMainWindow):
             self.showFullScreen()
         self.is_fullscreen = not self.is_fullscreen
 
+    def highlight_label(self, label, color):
+        label.setStyleSheet(f"QLabel {{ font-size: 14px; color: {color}; margin-top: 5px; font-weight: bold; }}")
+        QTimer.singleShot(200, lambda: label.setStyleSheet("QLabel { font-size: 14px; color: #7F8C8D; margin-top: 5px; }"))
+
     def eventFilter(self, obj, event):
         if event.type() == QEvent.KeyPress:
             key_event = QKeyEvent(event)
             if key_event.key() == Qt.Key_Left:
                 self.on_discard()
+                self.highlight_label(self.discard_label, "#FF4040")
                 return True
             elif key_event.key() == Qt.Key_Right:
                 self.on_keep()
+                self.highlight_label(self.keep_label, "#FFC000")
                 return True
             elif key_event.key() == Qt.Key_Up:
                 self.on_undo()
+                self.highlight_label(self.undo_label, "#3498DB")
                 return True
             elif key_event.key() == Qt.Key_F11:
                 self.toggle_fullscreen()
@@ -384,43 +436,11 @@ class MainWindow(QMainWindow):
     def showEvent(self, event):
         super().showEvent(event)
         self.setFocus()  # Ensure the main window has focus to capture key events
-
-class CustomFileIconProvider(QFileIconProvider):
-    def icon(self, fileInfo):
-        if fileInfo.isFile():
-            suffix = fileInfo.suffix().lower()
-            if suffix in ['jpg', 'jpeg', 'png', 'gif', 'bmp']:
-                return QIcon("path/to/image_icon.png")
-            elif suffix in ['doc', 'docx']:
-                return QIcon("path/to/word_icon.png")
-            elif suffix == 'pdf':
-                return QIcon("path/to/pdf_icon.png")
-            # Add more custom icons for different file types
-        return super().icon(fileInfo)
-
-def apply_dark_theme(app):
-    dark_palette = QPalette()
-    dark_palette.setColor(QPalette.Window, QColor(53, 53, 53))
-    dark_palette.setColor(QPalette.WindowText, Qt.white)
-    dark_palette.setColor(QPalette.Base, QColor(25, 25, 25))
-    dark_palette.setColor(QPalette.AlternateBase, QColor(53, 53, 53))
-    dark_palette.setColor(QPalette.ToolTipBase, Qt.white)
-    dark_palette.setColor(QPalette.ToolTipText, Qt.white)
-    dark_palette.setColor(QPalette.Text, Qt.white)
-    dark_palette.setColor(QPalette.Button, QColor(53, 53, 53))
-    dark_palette.setColor(QPalette.ButtonText, Qt.white)
-    dark_palette.setColor(QPalette.BrightText, Qt.red)
-    dark_palette.setColor(QPalette.Link, QColor(42, 130, 218))
-    dark_palette.setColor(QPalette.Highlight, QColor(42, 130, 218))
-    dark_palette.setColor(QPalette.HighlightedText, Qt.black)
-    app.setPalette(dark_palette)
-    app.setStyleSheet("QToolTip { color: #ffffff; background-color: #2a82da; border: 1px solid white; }")
-
+        
 if __name__ == '__main__':
     app = QApplication(sys.argv)
     
-    # Uncomment the following line to apply dark theme
-    # apply_dark_theme(app)
+   
     
     app.setStyle("Fusion")  # Use Fusion style for a modern look
     
