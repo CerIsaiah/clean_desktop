@@ -51,9 +51,9 @@ class FileCard(QWidget):
             }
         """)
 
-        self.title = QLabel("Desktop File")
+        self.title = QLabel(os.path.basename(file_path))
         self.title.setStyleSheet("""
-            font-size: 32px;
+            font-size: 24px;
             font-weight: bold;
             background-color: transparent;
             color: #2C3E50;
@@ -62,42 +62,14 @@ class FileCard(QWidget):
         self.title.setAlignment(Qt.AlignCenter)
         self.layout.addWidget(self.title)
 
-        self.content_area = RoundedWidget()
+        self.content_area = QWidget()
         self.content_layout = QVBoxLayout(self.content_area)
-        self.content_layout.setContentsMargins(20, 20, 20, 20)
+        self.content_layout.setAlignment(Qt.AlignCenter)
         self.layout.addWidget(self.content_area)
-
-        self.scroll_area = QScrollArea()
-        self.scroll_area.setWidgetResizable(True)
-        self.scroll_area.setStyleSheet("""
-            QScrollArea {
-                background-color: transparent;
-                border: none;
-            }
-            QScrollBar:vertical {
-                border: none;
-                background: #F0F0F0;
-                width: 10px;
-                margin: 0px 0px 0px 0px;
-            }
-            QScrollBar::handle:vertical {
-                background: #BDBDBD;
-                min-height: 20px;
-                border-radius: 5px;
-            }
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
-                height: 0px;
-            }
-        """)
-        self.content_layout.addWidget(self.scroll_area)
-
-        self.content_widget = QWidget()
-        self.content_widget_layout = QVBoxLayout(self.content_widget)
-        self.scroll_area.setWidget(self.content_widget)
 
         self.icon_label = QLabel()
         self.icon_label.setAlignment(Qt.AlignCenter)
-        self.content_widget_layout.addWidget(self.icon_label, alignment=Qt.AlignCenter)
+        self.content_layout.addWidget(self.icon_label, alignment=Qt.AlignCenter)
 
         self.preview_text = QTextEdit()
         self.preview_text.setReadOnly(True)
@@ -112,7 +84,7 @@ class FileCard(QWidget):
                 border: 1px solid #E0E0E0;
             }
         """)
-        self.content_widget_layout.addWidget(self.preview_text)
+        self.content_layout.addWidget(self.preview_text)
 
         self.file_info = QLabel()
         self.file_info.setStyleSheet("""
@@ -128,19 +100,8 @@ class FileCard(QWidget):
 
     def update_file_info(self):
         file_info = self.get_file_info()
-        self.file_info.setText(f"{file_info['name']}\n{file_info['size']}")
-
+        self.file_info.setText(f"{file_info['size']}")
         self.load_preview()
-
-    def get_file_icon(self, file_path):
-        icon_provider = QFileIconProvider()
-        file_info = QFileInfo(file_path)
-        icon = icon_provider.icon(file_info)
-        
-        if icon.isNull():
-            return QApplication.style().standardIcon(QStyle.SP_FileIcon)
-        
-        return icon
 
     def get_file_info(self):
         file_stats = os.stat(self.file_path)
@@ -164,7 +125,7 @@ class FileCard(QWidget):
         if file_extension in ['.png', '.jpg', '.jpeg']:
             pixmap = QPixmap(self.file_path)
             if not pixmap.isNull():
-                self.icon_label.setPixmap(pixmap.scaled(400, 400, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+                self.icon_label.setPixmap(pixmap.scaled(300, 300, Qt.KeepAspectRatio, Qt.SmoothTransformation))
                 self.icon_label.setVisible(True)
                 self.preview_text.setVisible(False)
             else:
@@ -177,7 +138,7 @@ class FileCard(QWidget):
                         text += page.get_text()
                         if len(text) > 1000:
                             break
-                    self.preview_text.setText(text)
+                    self.preview_text.setText(text[:1000] + "..." if len(text) > 1000 else text)
                     self.icon_label.setVisible(False)
                     self.preview_text.setVisible(True)
             except Exception as e:
@@ -196,12 +157,177 @@ class FileCard(QWidget):
                 self.icon_label.setVisible(False)
                 self.preview_text.setVisible(True)
         else:
-            icon = self.get_file_icon(self.file_path)
-            pixmap = icon.pixmap(QSize(200, 200))
-            self.icon_label.setPixmap(pixmap.scaled(200, 200, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            icon = QFileIconProvider().icon(QFileInfo(self.file_path))
+            pixmap = icon.pixmap(QSize(128, 128))
+            self.icon_label.setPixmap(pixmap)
             self.icon_label.setVisible(True)
             self.preview_text.setVisible(False)
 
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.adjust_content_size()
+
+    def adjust_content_size(self):
+        available_height = self.height() - self.title.height() - self.file_info.height() - 80
+        self.content_area.setFixedHeight(max(available_height, 200))
+        
+        if self.icon_label.isVisible():
+            icon_size = min(int(self.width() * 0.7), int(available_height * 0.8), 300)
+            self.icon_label.setFixedSize(icon_size, icon_size)
+
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Desktop File Swiper")
+        self.setStyleSheet("""
+            QMainWindow {
+                background-color: #F5F5F5;
+            }
+            QWidget {
+                font-family: 'Segoe UI', Arial, sans-serif;
+            }
+        """)
+
+        self.central_widget = QWidget()
+        self.setCentralWidget(self.central_widget)
+        self.layout = QVBoxLayout(self.central_widget)
+        self.layout.setSpacing(20)
+        self.layout.setContentsMargins(20, 20, 20, 20)
+
+        self.undo_button = QPushButton("Undo")
+        self.undo_button.clicked.connect(self.on_undo)
+        self.undo_button.setStyleSheet("""
+            QPushButton {
+                font-size: 18px;
+                font-weight: bold;
+                border-radius: 15px;
+                padding: 10px 20px;
+                background-color: #3498DB;
+                color: white;
+                border: none;
+            }
+            QPushButton:hover {
+                background-color: #2980B9;
+            }
+            QPushButton:pressed {
+                background-color: #2573A7;
+            }
+        """)
+        self.undo_label = QLabel("↑ Up Arrow")
+        self.undo_label.setStyleSheet("""
+            QLabel {
+                font-size: 14px;
+                color: #7F8C8D;
+                margin-top: 5px;
+            }
+        """)
+        self.undo_label.setAlignment(Qt.AlignCenter)
+        
+        undo_layout = QVBoxLayout()
+        undo_layout.addWidget(self.undo_button)
+        undo_layout.addWidget(self.undo_label)
+        self.layout.addLayout(undo_layout, alignment=Qt.AlignRight)
+
+        self.stack = QStackedWidget()
+        self.layout.addWidget(self.stack, 1)
+
+        button_layout = QHBoxLayout()
+        self.discard_button = QPushButton("Put in Clutter")
+        self.keep_button = QPushButton("Keep on Desktop")
+        self.discard_button.clicked.connect(self.on_discard)
+        self.keep_button.clicked.connect(self.on_keep)
+        button_style = """
+            QPushButton {
+                font-size: 22px;
+                font-weight: bold;
+                border-radius: 25px;
+                padding: 15px 30px;
+                border: none;
+            }
+            QPushButton:hover {
+                background-color: %s;
+            }
+            QPushButton:pressed {
+                background-color: %s;
+            }
+        """
+        self.discard_button.setStyleSheet(button_style % ("#E74C3C", "#C0392B") + "QPushButton { background-color: #FF4040; color: white; }")
+        self.keep_button.setStyleSheet(button_style % ("#F1C40F", "#F39C12") + "QPushButton { background-color: #FFC000; color: white; }")
+
+        button_layout.addWidget(self.discard_button)
+        button_layout.addWidget(self.keep_button)
+        self.layout.addLayout(button_layout)
+
+        # Create and style labels for keyboard commands
+        self.discard_label = QLabel("← Left Arrow")
+        self.keep_label = QLabel("→ Right Arrow")
+        label_style = """
+            QLabel {
+                font-size: 14px;
+                color: #7F8C8D;
+                margin-top: 5px;
+            }
+        """
+        self.discard_label.setStyleSheet(label_style)
+        self.keep_label.setStyleSheet(label_style)
+        self.discard_label.setAlignment(Qt.AlignCenter)
+        self.keep_label.setAlignment(Qt.AlignCenter)
+
+        # Add labels under the buttons
+        label_layout = QHBoxLayout()
+        label_layout.addWidget(self.discard_label)
+        label_layout.addWidget(self.keep_label)
+        self.layout.addLayout(label_layout)
+
+        self.desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
+        self.clutter_folder = os.path.join(self.desktop_path, "Desktop Clutter")
+        if not os.path.exists(self.clutter_folder):
+            os.makedirs(self.clutter_folder)
+
+        self.file_loader = FileLoader(self.desktop_path)
+        self.file_loader.file_loaded.connect(self.add_file)
+        self.file_loader.start()
+
+        self.undo_stack = []
+        self.current_files = []
+
+        QApplication.instance().installEventFilter(self)
+
+    # ... (keep the rest of the methods as they were in the previous version)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.adjust_layout()
+
+    def adjust_layout(self):
+        for i in range(self.stack.count()):
+            widget = self.stack.widget(i)
+            if isinstance(widget, FileCard):
+                widget.adjust_content_size()
+
+        # Adjust button sizes
+        button_width = max(int(self.width() * 0.4), 200)
+        button_height = max(int(self.height() * 0.1), 50)
+        self.discard_button.setFixedSize(button_width, button_height)
+        self.keep_button.setFixedSize(button_width, button_height)
+
+        # Adjust undo button size
+        undo_width = max(int(self.width() * 0.2), 100)
+        undo_height = max(int(self.height() * 0.06), 30)
+        self.undo_button.setFixedSize(undo_width, undo_height)
+
+        # Adjust font sizes
+        base_font_size = max(int(self.width() * 0.02), 12)
+        self.discard_button.setStyleSheet(self.discard_button.styleSheet() + f"font-size: {base_font_size}px;")
+        self.keep_button.setStyleSheet(self.keep_button.styleSheet() + f"font-size: {base_font_size}px;")
+        self.undo_button.setStyleSheet(self.undo_button.styleSheet() + f"font-size: {int(base_font_size * 0.8)}px;")
+
+        # Adjust label font sizes
+        label_font_size = max(int(base_font_size * 0.7), 10)
+        label_style = f"font-size: {label_font_size}px; color: #7F8C8D; margin-top: 5px;"
+        self.discard_label.setStyleSheet(label_style)
+        self.keep_label.setStyleSheet(label_style)
+        self.undo_label.setStyleSheet(label_style)
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -334,7 +460,7 @@ class MainWindow(QMainWindow):
 
     def resize_window(self):
         screen = QApplication.primaryScreen().availableGeometry()
-        width = int(screen.width() * 0.5)
+        width = int(screen.width() * 0.7)  # Increased from 0.5 to 0.7
         height = int(screen.height() * 0.8)
         self.setGeometry((screen.width() - width) // 2, (screen.height() - height) // 2, width, height)
 
@@ -425,22 +551,49 @@ class MainWindow(QMainWindow):
             elif key_event.key() == Qt.Key_F11:
                 self.toggle_fullscreen()
                 return True
-        elif event.type() == QEvent.Resize:
-            # Adjust content size when window is resized
-            for i in range(self.stack.count()):
-                card = self.stack.widget(i)
-                if isinstance(card, FileCard):
-                    card.icon_label.setFixedSize(self.width() // 3, self.height() // 3)
         return super().eventFilter(obj, event)
 
     def showEvent(self, event):
         super().showEvent(event)
         self.setFocus()  # Ensure the main window has focus to capture key events
-        
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.adjust_layout()
+
+    def adjust_layout(self):
+        # Adjust button sizes
+        button_width = max(int(self.width() * 0.3), 100)  # Minimum width of 100
+        button_height = max(int(self.height() * 0.08), 30)  # Minimum height of 30
+        self.discard_button.setFixedSize(button_width, button_height)
+        self.keep_button.setFixedSize(button_width, button_height)
+
+        # Adjust undo button size
+        undo_width = max(int(self.width() * 0.15), 50)  # Minimum width of 50
+        undo_height = max(int(self.height() * 0.05), 20)  # Minimum height of 20
+        self.undo_button.setFixedSize(undo_width, undo_height)
+
+        # Adjust font sizes
+        base_font_size = max(int(self.width() * 0.015), 8)  # Minimum font size of 8
+        self.discard_button.setStyleSheet(self.discard_button.styleSheet() + f"font-size: {base_font_size}px;")
+        self.keep_button.setStyleSheet(self.keep_button.styleSheet() + f"font-size: {base_font_size}px;")
+        self.undo_button.setStyleSheet(self.undo_button.styleSheet() + f"font-size: {max(int(base_font_size * 0.8), 6)}px;")
+
+        # Adjust label font sizes
+        label_font_size = max(int(base_font_size * 0.7), 6)  # Minimum font size of 6
+        label_style = f"font-size: {label_font_size}px; color: #7F8C8D; margin-top: 5px;"
+        self.discard_label.setStyleSheet(label_style)
+        self.keep_label.setStyleSheet(label_style)
+        self.undo_label.setStyleSheet(label_style)
+
+        # Adjust content in the stack
+        for i in range(self.stack.count()):
+            widget = self.stack.widget(i)
+            if isinstance(widget, FileCard):
+                widget.adjust_content_size()
+
 if __name__ == '__main__':
     app = QApplication(sys.argv)
-    
-   
     
     app.setStyle("Fusion")  # Use Fusion style for a modern look
     
@@ -449,5 +602,6 @@ if __name__ == '__main__':
     app.setFont(font)
     
     main_window = MainWindow()
+    main_window.setMinimumSize(600, 400)  # Set a minimum window size
     main_window.show()
     sys.exit(app.exec_())
