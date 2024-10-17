@@ -1,4 +1,4 @@
-name: Build Desktop File Swiper
+name: Build Desktop File Swiper 1
 
 on:
   release:
