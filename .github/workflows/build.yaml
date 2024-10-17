@@ -1,4 +1,4 @@
-name: Build Desktop File Swiper 1
+name: Build Desktop File Swiper
 
 on:
   release:
@@ -12,30 +12,31 @@ jobs:
         os: [windows-latest, macos-latest]
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: 3.8
+    - name: Update pip
+      run: python -m pip install --upgrade pip
     - name: Install dependencies
       run: |
-        python -m pip install --upgrade pip
         pip install -r requirements.txt
         pip install pyinstaller
     - name: Build with PyInstaller
       run: |
         pyinstaller --windowed --name "Desktop File Swiper" main.py
     - name: Upload artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: Desktop File Swiper-${{ matrix.os }}
-        path: dist/
+        path: dist/*
     - name: Upload Release Asset
       uses: actions/upload-release-asset@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         upload_url: ${{ github.event.release.upload_url }}
-        asset_path: ./dist/Desktop File Swiper${{ matrix.os == 'windows-latest' && '.exe' || '.app' }}
+        asset_path: ${{ matrix.os == 'windows-latest' && 'dist/Desktop File Swiper.exe' || 'dist/Desktop File Swiper.app' }}
         asset_name: Desktop File Swiper-${{ matrix.os }}${{ matrix.os == 'windows-latest' && '.exe' || '.app' }}
         asset_content_type: application/octet-stream
